@@ -1,0 +1,239 @@
+---
+title: "hawksDA"
+author: "Lawrence Jang"
+date: "5/26/2023"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+```
+
+## Data
+
+Read in the Kaggle dataset.
+
+```{r}
+# read in dataset
+df = read.csv("nbaplayersdraft.csv")
+```
+
+
+All the variables for the dataset.
+
+```{r}
+# get variable names
+colnames(df)
+```
+
+First couple rows for the dataset. 
+
+```{r}
+# display first few rows
+head(df)
+```
+
+## Part 1: Data Comprehension
+
+(A) Which NBA team(s) has drafted the most players who...
+a. went to Duke and were drafted in or before the 2000 draft?
+b. have a first name that begins with D and were drafted in an even year draft (1990, 1992, 1994, ...)?
+
+```{r}
+# part A
+# filter for drafts before 2001 and players from Duke
+a = df %>% filter(year <= 2000 & college == "Duke") 
+# display values by frequency
+sort(table(a$team), decreasing = TRUE)
+```
+
+Dallas, Minnesota, and Phoenix drafted the most players who went to Duke and 
+were drafted in or before the 2000 draft.
+
+```{r}
+# part B
+# filter for names that start with D and even drafts
+dEven = df %>% filter(grepl("^D", player) & year %% 2 == 0)
+# display values by frequency
+sort(table(dEven$team), decreasing = TRUE)
+```
+
+Boston, Milwaukee, and Seattle drafted the most players who went to Duke and 
+were drafted in or before the 2000 draft.
+
+
+(B) Describe the relationship between a team’s first round pick slot in one year with their first-round pick slot in
+the subsequent year.
+
+```{r}
+# get all first round picks, adjusting the first round pick limit based on expansion/number of teams in league
+firstRoundPicks =  df %>% filter((overall_pick <= 30 & year >= 2004)|(overall_pick <= 29 & year >= 1995 & year < 2004)|(overall_pick <= 27 & year >= 1989 & year < 1995)) 
+# keep the highest pick for a team in a given year
+singleFRPs = firstRoundPicks %>% 
+  group_by(year, team) %>%
+  slice_min(overall_pick) %>%
+  ungroup()
+# get pick and next year pick pairs
+pickComps <- singleFRPs %>%
+  group_by(team) %>%
+  arrange(year) %>%
+  mutate(next_year_pick = lead(overall_pick)) %>%
+  filter(!is.na(next_year_pick)) %>%
+  select(year, team, overall_pick, next_year_pick)
+```
+
+Summary statistics on difference between a team’s first round pick slot in one year with their first-round pick slot in the subsequent year.
+
+```{r}
+pickComps$diff = pickComps$next_year_pick - pickComps$overall_pick
+# correlation
+c = cor( pickComps$next_year_pick, pickComps$overall_pick)
+# mean
+mea = mean(pickComps$diff)
+# median
+med = median(pickComps$diff)
+# standard deviation
+std = sd(pickComps$diff)
+print(paste("Correlation:", c))
+print(paste("Mean:", mea))
+print(paste("Median:", med))
+print(paste("Standard Deviation:", std))
+```                                                                                                                    
+
+```{r}
+ggplot(pickComps, aes(x = overall_pick, y = next_year_pick)) +
+  geom_point() +
+  labs(x = "First Round Pick Slot (Current Year)",
+       y = "First Round Pick Slot (Next Year)") +
+  ggtitle("Relationship between First Round Picks in Consecutive Years") 
+```
+
+```{r}
+ggplot(pickComps, aes(x = diff)) +
+  geom_bar() +
+  labs(x = "Difference in First Round Slot", y = "Count") +
+  ggtitle("Difference between NBA Team's Highest First Round Slot in Consecutive Years") +
+   theme_minimal()
+```
+## Part 2 Analytical Acumen
+
+(A) Prompt: Analyze draft position value and team success/deficiencies compared to expectation.
+a. Create a method for valuing each draft slot in the NBA Draft (picks 1 through 60 in most drafts).
+b. Conditional on the expected value of the draft positions, which NBA teams have over or
+underperformed the most when drafting during this time span. Which College Teams have had the players
+outperform expectations the most after entering the NBA?
+c. Explain and present your findings with tables and visuals. What additional research areas would you
+focus on if given the opportunity to expand this study?
+
+
+```{r}
+# get cumulative win shares for each draft pick
+winSharesDF = df %>%
+  group_by(overall_pick) %>%
+  summarise(TotalWinShares = sum(win_shares, na.rm = T))
+# plot cumulative win shares by each draft pick slot
+ggplot(winSharesDF, aes(x = overall_pick, y = TotalWinShares)) +
+  geom_bar(stat = "identity", fill = "red") +
+  labs(x = "Pick Number", y = "Total Win Shares") +
+  ggtitle("Total Win Shares by Pick Value")
+```
+
+```{r}
+# get cumulative vorp for each draft pick
+vorpDF = df %>%
+  group_by(overall_pick) %>%
+  summarise(TotalVORP = sum(value_over_replacement, na.rm = T))
+# plot cumulative vorp by each draft pick slot
+ggplot(vorpDF, aes(x = overall_pick, y = TotalVORP)) +
+  geom_bar(stat = "identity", fill = "red") +
+  labs(x = "Pick Number", y = "Total Value Over Replacment") +
+  ggtitle("Total VORP by Pick Value")
+```
+
+Let's get the expected value for each pick by getting the mean metric for that pick across
+all drafts.
+
+```{r}
+# Win Share Version, get mean of win shares for each draft pick slot across all players
+winSharesMeanDF = df %>%
+  group_by(overall_pick) %>%
+  summarise(AVGWinShares = mean(win_shares, na.rm = T))
+# display expected value from each draft pick
+ggplot(winSharesMeanDF, aes(x = overall_pick, y = AVGWinShares)) +
+  geom_bar(stat = "identity", fill = "red") +
+  labs(x = "Pick Number", y = "AVG Win Shares") +
+  ggtitle("Expected Value by Draft Position") +  theme_minimal()
+```
+
+```{r}
+# VORP Version, get mean VORP for each draft pick slot across all players
+vorpMeanDF = df %>%
+  group_by(overall_pick) %>%
+  summarise(AVGVORP = mean(value_over_replacement, na.rm = T))
+# display expected value from each draft pick
+ggplot(vorpMeanDF, aes(x = overall_pick, y = AVGVORP)) +
+  geom_bar(stat = "identity", fill = "red") +
+  labs(x = "Pick Number", y = "AVG Career VORP") +
+  ggtitle("Expected Value by Draft Position") +  theme_minimal()
+```
+
+```{r}
+library(knitr)
+library(kableExtra)
+# display the expected value in terms of VORP for each pick
+kable(vorpMeanDF, "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+```{r}
+# add expected value dataframes to original dataframe
+df = merge(df, winSharesMeanDF, by = "overall_pick")
+df = merge(df, vorpMeanDF, by = "overall_pick")
+# define VORP and WS Value, difference between true and expected metrics
+df$pickValueWS = df$win_shares - df$AVGWinShares
+df$pickValueVORP = df$value_over_replacement - df$AVGVORP
+```
+
+```{r}
+# display the WS Value for each team over their history of drafting
+wsPickValueDF = df %>%
+  group_by(team) %>%
+  summarise(totalWSValue = sum(pickValueWS, na.rm = T)) %>% 
+  arrange(desc(totalWSValue))
+kable(wsPickValueDF, "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+#ggplot(wsPickValueDF, aes(x = team, y = totalWSValue)) +
+#  geom_bar(stat = "identity", fill = "red") +
+#  labs(x = "Team", y = "Win Shares Value") +
+#  ggtitle("Team's Return on Drafted Expected Value")
+```
+
+```{r}
+# display the VORP Value for each team over their history of drafting
+vorpPickValueDF = df %>%
+  group_by(team) %>%
+  summarise(totalVORPValue = sum(pickValueVORP, na.rm = T)) %>% arrange(desc(totalVORPValue))
+kable(vorpPickValueDF, "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+```{r}
+# display the VORP Value for each college over their history of drafting
+vorpPickValueDF = df %>%
+  group_by(college) %>%
+  summarise(totalVORPValue = sum(pickValueVORP, na.rm = T)) %>% arrange(desc(totalVORPValue))
+kable(vorpPickValueDF, "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+
+
+
+
+
+
+
+ 
